@@ -1,0 +1,367 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../global/app_state.dart';
+
+class EBConsumptionPage extends StatefulWidget {
+  const EBConsumptionPage({super.key});
+
+  @override
+  State<EBConsumptionPage> createState() => _EBConsumptionPageState();
+}
+
+class _EBConsumptionPageState extends State<EBConsumptionPage> {
+  final _supabase = Supabase.instance.client;
+
+  // Fetch unique house numbers that have readings
+  Future<List<String>> _fetchUniqueHouses() async {
+    try {
+      final response = await _supabase
+          .from('house_id')
+          .select('house_no')
+          .eq('EB', true)
+          .order('id', ascending: true);
+      
+      // Extract unique house numbers from the list
+      final List<dynamic> data = response as List<dynamic>;
+      final Set<String> uniqueHouses = data.map((item) => item['house_no'].toString()).toSet();
+      
+      List<String> sortedHouses = uniqueHouses.toList();
+      return sortedHouses;
+    } catch (e) {
+      debugPrint("FETCH ERROR: $e");
+      return [];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isAdmin = AppState.instance.admin;
+
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: const Text("Electricity Consumption"),
+        actions: [
+          if (isAdmin)
+            IconButton(
+              icon: const Icon(Icons.add_chart_rounded),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const EBReadingUpdatePage()),
+              ),
+            ),
+        ],
+      ),
+      body: FutureBuilder<List<String>>(
+        future: _fetchUniqueHouses(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final houses = snapshot.data ?? [];
+          if (houses.isEmpty) return const Center(child: Text("No houses found."));
+
+          return GridView.builder(
+            padding: const EdgeInsets.all(16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2, // 2 cards per row
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.2,
+            ),
+            itemCount: houses.length,
+            itemBuilder: (context, index) {
+              return InkWell(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => HouseHistoryPage(houseNo: houses[index]),
+                  ),
+                ),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  color: Colors.white,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.house_rounded, size: 40, color: Colors.blueAccent),
+                      const SizedBox(height: 8),
+                      Text(
+                        "House ${houses[index]}",
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+
+
+
+class HouseHistoryPage extends StatelessWidget {
+  final String houseNo;
+  const HouseHistoryPage({super.key, required this.houseNo});
+
+  @override
+  Widget build(BuildContext context) {
+    final supabase = Supabase.instance.client;
+
+    return Scaffold(
+      appBar: AppBar(title: Text("Reading History - $houseNo")),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: supabase
+            .from('electricity_readings')
+            .select()
+            .eq('house_no', houseNo)
+            .order('reading_year', ascending: false)
+            .order('reading_month', ascending: false),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          final logs = snapshot.data!;
+
+          return ListView.builder(
+            itemCount: logs.length,
+            padding: const EdgeInsets.all(12),
+            itemBuilder: (context, index) {
+              final log = logs[index];
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "${_getMonthName(log['reading_month'])} ${log['reading_year']}",
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(8)),
+                            child: Text("₹${log['total_cost'] ?? '0'}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                          )
+                        ],
+                      ),
+                      const Divider(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildDetail("Prev", "${log['previous_reading']}"),
+                          _buildDetail("Curr", "${log['current_reading']}"),
+                          _buildDetail("Units", "${log['units_used']}", color: Colors.blue),
+                        ],
+                      )
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDetail(String label, String value, {Color? color}) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
+      ],
+    );
+  }
+
+  String _getMonthName(int month) {
+    return ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month];
+  }
+}
+
+
+
+
+//This is the Electricity Consumption Update Page
+class EBReadingUpdatePage extends StatefulWidget {
+  const EBReadingUpdatePage({super.key});
+
+  @override
+  State<EBReadingUpdatePage> createState() => _EBReadingUpdatePageState();
+}
+
+class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
+  final _supabase = Supabase.instance.client;
+  final Map<String, TextEditingController> _controllers = {};
+  bool _isSaving = false;
+
+  Future<List<Map<String, dynamic>>> _fetchAndGroupEB() async {
+    try {
+      // Adjusted based on your parameter fix: joining house_id with address
+      final response = await _supabase
+          .from('house_id')
+          .select('*, address:add_id(*)') 
+          .eq('EB', true)
+          .order('id', ascending: true);
+
+      final List<dynamic> data = response as List<dynamic>;
+      Map<String, Map<String, dynamic>> groupedData = {};
+
+      for (var item in data) {
+        final addressMap = item['address'];
+        final String addressKey = addressMap != null 
+            ? "No. ${addressMap['house_no']} ${addressMap['street']} Street" 
+            : "Unknown Address";
+
+        if (!groupedData.containsKey(addressKey)) {
+          groupedData[addressKey] = {
+            'header': addressKey,
+            'houses': [],
+          };
+        }
+        groupedData[addressKey]!['houses'].add(item);
+      }
+      return groupedData.values.toList();
+    } catch (e) {
+      debugPrint("FETCH ERROR: $e");
+      return [];
+    }
+  }
+
+  
+  // --- NEW BULK SAVE FUNCTION ---
+  Future<void> _saveAddressGroup(List<dynamic> houses) async {
+    setState(() => _isSaving = true);
+    final DateTime now = DateTime.now();
+    int count = 0;
+
+    try {
+      for (var house in houses) {
+        final hNo = house['house_no'];
+        final String input = _controllers[hNo]?.text ?? '';
+        final double? reading = double.tryParse(input);
+
+        if (reading != null) {
+          // Fetch previous reading
+          final lastRecord = await _supabase
+              .from('electricity_readings')
+              .select('current_reading')
+              .eq('house_no', hNo)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+
+          double prev = lastRecord?['current_reading']?.toDouble() ?? 0.0;
+
+          // Insert into log
+          await _supabase.from('electricity_readings').insert({
+            'house_no': hNo,
+            'reading_month': now.month,
+            'reading_year': now.year,
+            'current_reading': reading,
+            'previous_reading': prev,
+          });
+          count++;
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Successfully saved $count readings'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("EB Reading Entry")),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _fetchAndGroupEB(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final groups = snapshot.data ?? [];
+
+          return ListView.builder(
+            itemCount: groups.length,
+            padding: const EdgeInsets.all(12),
+            itemBuilder: (context, index) {
+              final group = groups[index];
+              final houses = group['houses'] as List;
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ExpansionTile(
+                  leading: const Icon(Icons.location_on, color: Colors.orange),
+                  title: Text(group['header'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                  children: [
+                    ...houses.map((house) {
+                      final hNo = house['house_no'];
+                      _controllers.putIfAbsent(hNo, () => TextEditingController());
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(hNo, style: const TextStyle(fontSize: 16))),
+                            Expanded(
+                              flex: 2,
+                              child: TextField(
+                                controller: _controllers[hNo],
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: "Current Reading",
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    
+                    // --- THE SAVE BUTTON FOR THE WHOLE ADDRESS ---
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(45),
+                          backgroundColor: Colors.blueGrey[800],
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: _isSaving ? null : () => _saveAddressGroup(houses),
+                        icon: _isSaving 
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
+                          : const Icon(Icons.cloud_upload),
+                        label: const Text("SAVE ALL FOR THIS ADDRESS"),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
