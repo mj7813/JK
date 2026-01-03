@@ -17,6 +17,7 @@ dependencies:
   printing: ^5.13.2
   path_provider: ^2.0.11
   open_file: ^3.3.2
+  collection: ^1.18.0
 
 dev_dependencies:
   flutter_test:

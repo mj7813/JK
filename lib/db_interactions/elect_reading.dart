@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../global/app_state.dart';
+import 'package:collection/collection.dart'; // This allows using firstWhereOrNull
 
 class EBConsumptionPage extends StatefulWidget {
   const EBConsumptionPage({super.key});
@@ -204,91 +205,116 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
   bool _isSaving = false;
 
   Future<List<Map<String, dynamic>>> _fetchAndGroupEB() async {
-    try {
-      // Adjusted based on your parameter fix: joining house_id with address
-      final response = await _supabase
-          .from('house_id')
-          .select('*, address:add_id(*)') 
-          .eq('EB', true)
-          .order('id', ascending: true);
+  try {
+    final now = DateTime.now();
 
-      final List<dynamic> data = response as List<dynamic>;
-      Map<String, Map<String, dynamic>> groupedData = {};
+    // 1. Fetch houses
+    final houseResponse = await _supabase
+        .from('house_id')
+        .select('*, address:add_id(*)')
+        .eq('EB', true)
+        .order('id', ascending: true);
 
-      for (var item in data) {
-        final addressMap = item['address'];
-        final String addressKey = addressMap != null 
-            ? "No. ${addressMap['house_no']} ${addressMap['street']} Street" 
-            : "Unknown Address";
+    // 2. Fetch existing readings for THIS month
+    final existingReadings = await _supabase
+        .from('electricity_readings')
+        .select()
+        .eq('reading_month', now.month)
+        .eq('reading_year', now.year);
 
-        if (!groupedData.containsKey(addressKey)) {
-          groupedData[addressKey] = {
-            'header': addressKey,
-            'houses': [],
-          };
-        }
-        groupedData[addressKey]!['houses'].add(item);
+    final List<dynamic> data = houseResponse as List<dynamic>;
+    Map<String, Map<String, dynamic>> groupedData = {};
+
+    for (var item in data) {
+      final String hNo = item['house_no'];
+      
+      // 3. Pre-fill controller if a reading already exists
+      final existing = existingReadings.firstWhereOrNull((r) => r['house_no'] == hNo);
+      
+      if (existing != null) {
+        _controllers.putIfAbsent(hNo, () => TextEditingController(text: existing['current_reading'].toString()));
+      } else {
+        _controllers.putIfAbsent(hNo, () => TextEditingController());
       }
-      return groupedData.values.toList();
-    } catch (e) {
-      debugPrint("FETCH ERROR: $e");
-      return [];
+
+      // ... rest of your grouping logic stays the same ...
+      final addressMap = item['address'];
+      final String addressKey = addressMap != null 
+          ? "No. ${addressMap['house_no']} ${addressMap['street']} Street" 
+          : "Unknown Address";
+
+      if (!groupedData.containsKey(addressKey)) {
+        groupedData[addressKey] = {'header': addressKey, 'houses': []};
+      }
+      groupedData[addressKey]!['houses'].add(item);
     }
+    return groupedData.values.toList();
+  } catch (e) {
+    debugPrint("FETCH ERROR: $e");
+    return [];
   }
+}
 
   
   // --- NEW BULK SAVE FUNCTION ---
   Future<void> _saveAddressGroup(List<dynamic> houses) async {
-    setState(() => _isSaving = true);
-    final DateTime now = DateTime.now();
-    int count = 0;
+  setState(() => _isSaving = true);
+  final DateTime now = DateTime.now();
+  List<Map<String, dynamic>> readingsToUpsert = [];
 
-    try {
-      for (var house in houses) {
-        final hNo = house['house_no'];
-        final String input = _controllers[hNo]?.text ?? '';
-        final double? reading = double.tryParse(input);
+  try {
+    for (var house in houses) {
+      final hNo = house['house_no'];
+      final String input = _controllers[hNo]?.text ?? '';
+      final double? reading = double.tryParse(input);
 
-        if (reading != null) {
-          // Fetch previous reading
-          final lastRecord = await _supabase
-              .from('electricity_readings')
-              .select('current_reading')
-              .eq('house_no', hNo)
-              .order('created_at', ascending: false)
-              .limit(1)
-              .maybeSingle();
+      if (reading != null) {
+        // Fetch previous reading (from a DIFFERENT month)
+        final lastRecord = await _supabase
+            .from('electricity_readings')
+            .select('current_reading')
+            .eq('house_no', hNo)
+            .lt('reading_month', now.month) // Look for months before this one
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
 
-          double prev = lastRecord?['current_reading']?.toDouble() ?? 0.0;
+        double prev = lastRecord?['current_reading']?.toDouble() ?? 0.0;
 
-          // Insert into log
-          await _supabase.from('electricity_readings').insert({
-            'house_no': hNo,
-            'reading_month': now.month,
-            'reading_year': now.year,
-            'current_reading': reading,
-            'previous_reading': prev,
-          });
-          count++;
-        }
+        readingsToUpsert.add({
+          'house_no': hNo,
+          'reading_month': now.month,
+          'reading_year': now.year,
+          'current_reading': reading,
+          'previous_reading': prev,
+        });
       }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Successfully saved $count readings'), backgroundColor: Colors.green),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
     }
-  }
 
+    if (readingsToUpsert.isEmpty) return;
+
+    // UPSERT: This updates the record if house_no + month + year already exists
+    // You must specify 'onConflict' if you have a unique index
+    await _supabase
+        .from('electricity_readings')
+        .upsert(readingsToUpsert, onConflict: 'house_no, reading_month, reading_year');
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Readings Updated successfully'), backgroundColor: Colors.green),
+      );
+    }
+  } catch (e) {
+    debugPrint("SAVE ERROR: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  } finally {
+    if (mounted) setState(() => _isSaving = false);
+  }
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -316,6 +342,7 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
                   children: [
                     ...houses.map((house) {
                       final hNo = house['house_no'];
+                      final bool hasValue = _controllers[hNo]!.text.isNotEmpty;
                       _controllers.putIfAbsent(hNo, () => TextEditingController());
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -324,15 +351,19 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
                             Expanded(child: Text(hNo, style: const TextStyle(fontSize: 16))),
                             Expanded(
                               flex: 2,
+
                               child: TextField(
                                 controller: _controllers[hNo],
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   labelText: "Current Reading",
-                                  border: OutlineInputBorder(),
+                                  // Change border color if reading already exists for the month
+                                  enabledBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(color: hasValue ? Colors.green : Colors.grey),
+                                  ),
+                                  border: const OutlineInputBorder(),
                                   isDense: true,
                                 ),
-                              ),
+                              ),                     
                             ),
                           ],
                         ),

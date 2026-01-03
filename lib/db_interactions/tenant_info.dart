@@ -43,7 +43,7 @@ class _TenantListState extends State<TenantList> {
   @override
   Widget build(BuildContext context) {
   return ListenableBuilder(
-    listenable: AppState.instance,
+  listenable: AppState.instance,
     builder: (context, child) {
       final bool isAdmin = AppState.instance.admin;
     return Scaffold(
@@ -132,7 +132,7 @@ class _TenantListState extends State<TenantList> {
       ),
     );
   }
-}
+  );} }
 
 
 

@@ -4,6 +4,7 @@ import 'package:flutter_application_1/db_interactions/tenant_info.dart';
 import 'package:flutter_application_1/db_interactions/property_list_page.dart';
 import 'package:flutter_application_1/db_interactions/elect_reading.dart';
 import 'package:flutter_application_1/db_interactions/quick_payments.dart';
+import 'package:flutter_application_1/global/app_state.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -19,6 +20,7 @@ class _HomePageState extends State<HomePage> {
     try {
       await Supabase.instance.client.auth.signOut();
       if (!mounted) return;
+      AppState.instance.reset();
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     } catch (error) {
       if (!mounted) return;
