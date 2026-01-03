@@ -42,7 +42,10 @@ class _TenantListState extends State<TenantList> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isAdmin = AppState.instance.admin;
+  return ListenableBuilder(
+    listenable: AppState.instance,
+    builder: (context, child) {
+      final bool isAdmin = AppState.instance.admin;
     return Scaffold(
       backgroundColor: Colors.grey[100], // Light grey background
       appBar: AppBar(
