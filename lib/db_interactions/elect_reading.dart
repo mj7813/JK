@@ -36,8 +36,10 @@ class _EBConsumptionPageState extends State<EBConsumptionPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isAdmin = AppState.instance.admin;
-
+  return ListenableBuilder(
+  listenable: AppState.instance,
+    builder: (context, child) {
+      final bool isAdmin = AppState.instance.admin;
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
@@ -46,10 +48,14 @@ class _EBConsumptionPageState extends State<EBConsumptionPage> {
           if (isAdmin)
             IconButton(
               icon: const Icon(Icons.add_chart_rounded),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const EBReadingUpdatePage()),
-              ),
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const EBReadingUpdatePage()),
+                );
+                // This code runs when you come BACK from the update page
+                setState(() {}); 
+              },
             ),
         ],
       ),
@@ -101,6 +107,8 @@ class _EBConsumptionPageState extends State<EBConsumptionPage> {
         },
       ),
     );
+    }
+  );
   }
 }
 
@@ -257,64 +265,69 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
 
   
   // --- NEW BULK SAVE FUNCTION ---
+  // REPLACE your current build method's ListView.builder and _saveAddressGroup with this:
+
+  // --- UPDATED SAVE FUNCTION WITH REFRESH ---
   Future<void> _saveAddressGroup(List<dynamic> houses) async {
-  setState(() => _isSaving = true);
-  final DateTime now = DateTime.now();
-  List<Map<String, dynamic>> readingsToUpsert = [];
+    setState(() => _isSaving = true);
+    final DateTime now = DateTime.now();
+    List<Map<String, dynamic>> readingsToUpsert = [];
 
-  try {
-    for (var house in houses) {
-      final hNo = house['house_no'];
-      final String input = _controllers[hNo]?.text ?? '';
-      final double? reading = double.tryParse(input);
+    try {
+      for (var house in houses) {
+        final hNo = house['house_no'];
+        final String input = _controllers[hNo]?.text ?? '';
+        final double? reading = double.tryParse(input);
 
-      if (reading != null) {
-        // Fetch previous reading (from a DIFFERENT month)
-        final lastRecord = await _supabase
-            .from('electricity_readings')
-            .select('current_reading')
-            .eq('house_no', hNo)
-            .lt('reading_month', now.month) // Look for months before this one
-            .order('created_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
+        if (reading != null) {
+          // Fetch previous reading
+          final lastRecord = await _supabase
+              .from('electricity_readings')
+              .select('current_reading')
+              .eq('house_no', hNo)
+              .lt('reading_month', now.month) 
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
 
-        double prev = lastRecord?['current_reading']?.toDouble() ?? 0.0;
+          double prev = lastRecord?['current_reading']?.toDouble() ?? 0.0;
 
-        readingsToUpsert.add({
-          'house_no': hNo,
-          'reading_month': now.month,
-          'reading_year': now.year,
-          'current_reading': reading,
-          'previous_reading': prev,
-        });
+          readingsToUpsert.add({
+            'house_no': hNo,
+            'reading_month': now.month,
+            'reading_year': now.year,
+            'current_reading': reading,
+            'previous_reading': prev,
+          });
+        }
       }
-    }
 
-    if (readingsToUpsert.isEmpty) return;
+      if (readingsToUpsert.isEmpty) return;
 
-    // UPSERT: This updates the record if house_no + month + year already exists
-    // You must specify 'onConflict' if you have a unique index
-    await _supabase
-        .from('electricity_readings')
-        .upsert(readingsToUpsert, onConflict: 'house_no, reading_month, reading_year');
+      await _supabase
+          .from('electricity_readings')
+          .upsert(readingsToUpsert, onConflict: 'house_no, reading_month, reading_year');
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Readings Updated successfully'), backgroundColor: Colors.green),
-      );
+      if (mounted) {
+        // FIX 1: This tells the FutureBuilder to fetch fresh data from the DB
+        setState(() {}); 
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Readings Updated successfully'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      debugPrint("SAVE ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
-  } catch (e) {
-    debugPrint("SAVE ERROR: $e");
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
-    }
-  } finally {
-    if (mounted) setState(() => _isSaving = false);
   }
-}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -342,8 +355,11 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
                   children: [
                     ...houses.map((house) {
                       final hNo = house['house_no'];
-                      final bool hasValue = _controllers[hNo]!.text.isNotEmpty;
+                      
+                      // Ensure controller exists
                       _controllers.putIfAbsent(hNo, () => TextEditingController());
+                      final controller = _controllers[hNo]!;
+
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: Row(
@@ -351,26 +367,34 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
                             Expanded(child: Text(hNo, style: const TextStyle(fontSize: 16))),
                             Expanded(
                               flex: 2,
-
-                              child: TextField(
-                                controller: _controllers[hNo],
-                                decoration: InputDecoration(
-                                  labelText: "Current Reading",
-                                  // Change border color if reading already exists for the month
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: hasValue ? Colors.green : Colors.grey),
-                                  ),
-                                  border: const OutlineInputBorder(),
-                                  isDense: true,
-                                ),
-                              ),                     
+                              // FIX 2: Listens to typing and updates border color immediately
+                              child: ValueListenableBuilder(
+                                valueListenable: controller,
+                                builder: (context, value, child) {
+                                  final bool hasValue = value.text.isNotEmpty;
+                                  return TextField(
+                                    controller: controller,
+                                    keyboardType: TextInputType.number,
+                                    decoration: InputDecoration(
+                                      labelText: "Current Reading",
+                                      enabledBorder: OutlineInputBorder(
+                                        borderSide: BorderSide(
+                                          color: hasValue ? Colors.green : Colors.grey,
+                                          width: hasValue ? 2.0 : 1.0,
+                                        ),
+                                      ),
+                                      border: const OutlineInputBorder(),
+                                      isDense: true,
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ],
                         ),
                       );
                     }),
                     
-                    // --- THE SAVE BUTTON FOR THE WHOLE ADDRESS ---
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: ElevatedButton.icon(
