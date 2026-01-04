@@ -18,9 +18,9 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _signOut() async {
     try {
+      AppState.instance.reset();
       await Supabase.instance.client.auth.signOut();
       if (!mounted) return;
-      AppState.instance.reset();
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     } catch (error) {
       if (!mounted) return;
