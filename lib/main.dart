@@ -4,13 +4,14 @@ import 'package:flutter_application_1/Screens/login_page.dart';
 import 'package:flutter_application_1/screens/signup_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_application_1/Screens/user_page.dart';
+import 'package:flutter_application_1/env.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
-    url: 'https://wcglswpaeswhxaqdoaum.supabase.co',
-    anonKey: 'sb_publishable_4_5Kshs7wot0SEuQqNz5Wg_s-mmLfqv',
+    url: Env.baseUrl,
+    anonKey: Env.apiKey,
   );
 
   runApp(const RentalManagerApp());
