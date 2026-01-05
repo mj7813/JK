@@ -5,16 +5,25 @@ import 'package:flutter_application_1/screens/signup_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_application_1/Screens/user_page.dart';
 import 'package:flutter_application_1/env.dart';
+import 'package:flutter_application_1/global/app_state.dart';
+import 'package:provider/provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final appState = AppState.instance;
+  await appState.loadInitialData();
 
   await Supabase.initialize(
     url: Env.baseUrl,
     anonKey: Env.apiKey,
   );
 
-  runApp(const RentalManagerApp());
+  runApp(
+    ChangeNotifierProvider.value(
+      value: appState,
+      child: const RentalManagerApp(),
+      )
+  );
 }
 
 class RentalManagerApp extends StatelessWidget {

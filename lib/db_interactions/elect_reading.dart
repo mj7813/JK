@@ -209,8 +209,23 @@ class EBReadingUpdatePage extends StatefulWidget {
 
 class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
   final _supabase = Supabase.instance.client;
+  late Future<List<Map<String, dynamic>>> _dataFuture;
   final Map<String, TextEditingController> _controllers = {};
   bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 2. Initialize the future ONLY ONCE when the page loads
+    _dataFuture = _fetchAndGroupEB();
+  }
+
+  // 3. Helper to refresh data after saving
+  void _refreshData() {
+    setState(() {
+      _dataFuture = _fetchAndGroupEB();
+    });
+  }
 
   Future<List<Map<String, dynamic>>> _fetchAndGroupEB() async {
   try {
@@ -239,11 +254,14 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
       // 3. Pre-fill controller if a reading already exists
       final existing = existingReadings.firstWhereOrNull((r) => r['house_no'] == hNo);
       
-      if (existing != null) {
-        _controllers.putIfAbsent(hNo, () => TextEditingController(text: existing['current_reading'].toString()));
-      } else {
-        _controllers.putIfAbsent(hNo, () => TextEditingController());
-      }
+      if (!_controllers.containsKey(hNo)) {
+          _controllers[hNo] = TextEditingController(
+            text: existing != null ? existing['current_reading'].toString() : ''
+          );
+        } else if (existing != null) {
+          // Update text if data changed externally
+          _controllers[hNo]!.text = existing['current_reading'].toString();
+        }
 
       // ... rest of your grouping logic stays the same ...
       final addressMap = item['address'];
@@ -310,7 +328,7 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
 
       if (mounted) {
         // FIX 1: This tells the FutureBuilder to fetch fresh data from the DB
-        setState(() {}); 
+        _refreshData();
         
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Readings Updated successfully'), backgroundColor: Colors.green),
@@ -318,11 +336,7 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
       }
     } catch (e) {
       debugPrint("SAVE ERROR: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
-      }
+    
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -333,7 +347,7 @@ class _EBReadingUpdatePageState extends State<EBReadingUpdatePage> {
     return Scaffold(
       appBar: AppBar(title: const Text("EB Reading Entry")),
       body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _fetchAndGroupEB(),
+        future: _dataFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
