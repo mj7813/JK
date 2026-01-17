@@ -82,7 +82,7 @@ class _UserPageState extends State<UserPage> {
                   Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => TenantInfoPage(houseNo: houseNo ?? ""),
+                        builder: (context) => TenantInfoPage(houseNo: houseNo ?? "", isEditable: false),
                       ),
                     );
                   }

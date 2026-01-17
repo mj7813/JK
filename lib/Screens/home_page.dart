@@ -94,7 +94,7 @@ class _HomePageState extends State<HomePage> {
                   subtitle: "Maintenance",
                   icon: Icons.build_circle_rounded,
                   color: Colors.redAccent,
-                  onTap: () => print("Navigate to Expenses"),
+                  onTap: () => Navigator.pushNamed(context, '/ledger'),
                 ),
                 _buildActionCard(
                   context,

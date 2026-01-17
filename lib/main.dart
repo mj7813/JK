@@ -7,6 +7,9 @@ import 'package:flutter_application_1/Screens/user_page.dart';
 import 'package:flutter_application_1/env.dart';
 import 'package:flutter_application_1/global/app_state.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_application_1/expence_tracker/add_account.dart';
+import 'package:flutter_application_1/expence_tracker/dashboard.dart';
+import 'package:flutter_application_1/expence_tracker/add_transaction.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,6 +50,10 @@ class RentalManagerApp extends StatelessWidget {
         '/signup': (context) => const SignupPage(),
         '/home': (context) => const HomePage(),
         '/user': (context) => const UserPage(),
+        '/ledger': (context) => const DashboardPage(),
+        '/add_account': (context) => const AddAccountPage(),
+        '/add_transaction': (context) => const AddTransactionPage(),
+
       },
     );
   }

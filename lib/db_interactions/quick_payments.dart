@@ -194,7 +194,7 @@ class _PaymentCollectionPageState extends State<PaymentCollectionPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  "House $house",
+                  house,
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 8),
@@ -206,8 +206,8 @@ class _PaymentCollectionPageState extends State<PaymentCollectionPage> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      "O/S: ₹${debt.toStringAsFixed(0)}",
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                      "₹${debt.toStringAsFixed(0)}",
+                      style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.w700),
                     ),
                   )
                 else
